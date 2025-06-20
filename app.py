@@ -1,11 +1,13 @@
 import streamlit as st
 import requests
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 
+# --- API CONFIG ---
 API_KEY = st.secrets["api_keys"]["alpha_vantage"]
 BASE_URL = "https://www.alphavantage.co/query"
 
+# --- FINANCIAL STATEMENT FUNCTIONS ---
 FUNCTIONS = {
     "Balance Sheet": "BALANCE_SHEET",
     "Cash Flow": "CASH_FLOW",
@@ -85,6 +87,7 @@ OVERVIEW_FIELDS = {
     "PriceToSalesRatioTTM": "Price/Sales"
 }
 
+# --- FORMATTERS ---
 def format_large_numbers(df):
     def _format(val):
         try:
@@ -104,23 +107,18 @@ def format_large_numbers(df):
 def prettify_columns(df):
     return df.rename(columns=PRETTY_LABELS)
 
+# --- DATA FETCHERS ---
 def get_fundamentals(ticker, statement_label):
-    function = FUNCTIONS[statement_label]
     params = {
-        "function": function,
+        "function": FUNCTIONS[statement_label],
         "symbol": ticker,
         "apikey": API_KEY
     }
-    response = requests.get(BASE_URL, params=params)
-    if response.status_code != 200:
-        return pd.DataFrame()
-    data = response.json()
+    r = requests.get(BASE_URL, params=params)
+    data = r.json()
     reports = data.get("annualReports", [])
-    if not reports:
-        return pd.DataFrame()
-    keys = KEY_FIELDS[function]
-    filtered = [{k: r.get(k, None) for k in keys} for r in reports]
-    return pd.DataFrame(filtered)
+    keys = KEY_FIELDS[FUNCTIONS[statement_label]]
+    return pd.DataFrame([{k: r.get(k) for k in keys} for r in reports])
 
 def get_overview(ticker):
     params = {
@@ -128,45 +126,80 @@ def get_overview(ticker):
         "symbol": ticker,
         "apikey": API_KEY
     }
-    response = requests.get(BASE_URL, params=params)
-    if response.status_code != 200:
-        return {}
-    data = response.json()
+    r = requests.get(BASE_URL, params=params)
+    data = r.json()
     return {label: data.get(key, None) for key, label in OVERVIEW_FIELDS.items()}
 
+# --- PLOTTER ---
 def plot_trends(df, x_col, y_cols, title):
     try:
         df[x_col] = pd.to_datetime(df[x_col])
         df = df.sort_values(x_col)
-        plot_df = df[[x_col] + y_cols].copy()
+        df_clean = df[[x_col] + y_cols].copy()
         for col in y_cols:
-            plot_df[col] = plot_df[col].replace('[\$,B,M,K]', '', regex=True).astype(float)
-        fig = px.line(plot_df, x=x_col, y=y_cols, title=title)
+            df_clean[col] = df_clean[col].replace('[\$,B,M,K]', '', regex=True).astype(float)
+
+        pct_changes = {
+            col: ((df_clean[col].iloc[-1] - df_clean[col].iloc[0]) / abs(df_clean[col].iloc[0]) * 100)
+            if df_clean[col].iloc[0] not in [0, None] else 0
+            for col in y_cols
+        }
+
+        fig = go.Figure()
+
+        # Bars for the first column
+        fig.add_trace(go.Bar(
+            x=df_clean[x_col],
+            y=df_clean[y_cols[0]],
+            name=f"{y_cols[0]} ({pct_changes[y_cols[0]]:+.1f}%)",
+            marker_color="rgba(100,150,255,0.6)"
+        ))
+
+        # Lines for all columns
+        for col in y_cols:
+            fig.add_trace(go.Scatter(
+                x=df_clean[x_col],
+                y=df_clean[col],
+                mode="lines+markers",
+                name=f"{col} ({pct_changes[col]:+.1f}%)",
+                line=dict(width=2)
+            ))
+
+        fig.update_layout(
+            title=title,
+            barmode="overlay",
+            xaxis_title="Fiscal Date",
+            yaxis_title="Value",
+            legend_title="Metric (Δ%)",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
-        st.warning(f"Could not generate plot for {title}: {e}")
+        st.warning(f"Could not plot: {title} → {e}")
 
-# Streamlit App
+# --- STREAMLIT UI ---
 st.set_page_config(layout="wide")
 st.title("📊 Fundamental Metrics Dashboard")
 
 ticker = st.text_input("Enter stock ticker (e.g., IBM, AAPL, MSFT)", value="IBM").upper()
 
 if st.button("Fetch Fundamentals"):
-    # --- Overview Section ---
+    # Overview
     st.subheader("Company Overview")
     overview = get_overview(ticker)
     if overview:
-        df = pd.DataFrame([overview])
-        df = format_large_numbers(df)
-        for label, value in df.iloc[0].items():
+        overview_df = pd.DataFrame([overview])
+        overview_df = format_large_numbers(overview_df)
+        for label, value in overview_df.iloc[0].items():
             col1, col2 = st.columns([0.4, 0.6])
             col1.markdown(f"**{label}**")
             col2.markdown(f"{value}")
     else:
         st.warning("No overview data returned.")
 
-    # --- Financial Statements + Trends ---
+    # Statements
     for section in FUNCTIONS.keys():
         st.subheader(section)
         df = get_fundamentals(ticker, section)
@@ -177,7 +210,6 @@ if st.button("Fetch Fundamentals"):
             df = format_large_numbers(df)
             st.dataframe(df, use_container_width=True)
 
-            # Plot section-specific trends
             if section == "Balance Sheet":
                 plot_trends(df, "Fiscal Date", ["Total Assets", "Total Liabilities"], "Total Assets vs Liabilities")
             elif section == "Cash Flow":
