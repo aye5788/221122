@@ -6,14 +6,14 @@ import pandas as pd
 API_KEY = st.secrets["api_keys"]["alpha_vantage"]
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Functions for statements
+# Function names for financials
 FUNCTIONS = {
     "Balance Sheet": "BALANCE_SHEET",
     "Cash Flow": "CASH_FLOW",
     "Income Statement": "INCOME_STATEMENT"
 }
 
-# Whitelisted fields for each statement
+# Field mappings for each financial statement
 KEY_FIELDS = {
     "BALANCE_SHEET": [
         "fiscalDateEnding", "totalAssets", "totalLiabilities", "totalShareholderEquity",
@@ -33,7 +33,39 @@ KEY_FIELDS = {
     ]
 }
 
-# Overview fields to extract and display first
+# Human-readable column name mapping
+PRETTY_LABELS = {
+    "fiscalDateEnding": "Fiscal Date",
+    "totalAssets": "Total Assets",
+    "totalLiabilities": "Total Liabilities",
+    "totalShareholderEquity": "Total Shareholder Equity",
+    "currentAssets": "Current Assets",
+    "currentLiabilities": "Current Liabilities",
+    "cashAndCashEquivalentsAtCarryingValue": "Cash Equivalents at Carrying Value",
+    "shortTermDebt": "Short-Term Debt",
+    "longTermDebt": "Long-Term Debt",
+    "retainedEarnings": "Retained Earnings",
+    "operatingCashflow": "Operating Cash Flow",
+    "capitalExpenditures": "Capital Expenditures",
+    "netIncome": "Net Income",
+    "depreciationDepletionAndAmortization": "Amortization",
+    "dividendPayoutCommonStock": "Dividend Payout (Common Stock)",
+    "cashflowFromInvestment": "Cash Flow from Investment",
+    "cashflowFromFinancing": "Cash Flow from Financing",
+    "totalRevenue": "Total Revenue",
+    "grossProfit": "Gross Profit",
+    "operatingIncome": "Operating Income",
+    "ebit": "EBIT",
+    "ebitda": "EBITDA",
+    "costOfRevenue": "Cost of Revenue",
+    "sellingGeneralAndAdministrative": "SG&A",
+    "researchAndDevelopment": "R&D",
+    "incomeTaxExpense": "Income Tax Expense",
+    "interestExpense": "Interest Expense",
+    "interestIncome": "Interest Income"
+}
+
+# Overview field mapping (used only for overview display)
 OVERVIEW_FIELDS = {
     "Name": "Company Name",
     "Exchange": "Exchange",
@@ -57,7 +89,6 @@ OVERVIEW_FIELDS = {
     "PriceToSalesRatioTTM": "Price/Sales"
 }
 
-# Format large numbers for better readability
 def format_large_numbers(df):
     def _format(val):
         try:
@@ -74,11 +105,9 @@ def format_large_numbers(df):
             return val
     return df.applymap(_format)
 
-# Apply custom labels
-def prettify_columns(df, label_map):
-    return df.rename(columns=label_map)
+def prettify_columns(df):
+    return df.rename(columns=PRETTY_LABELS)
 
-# Pull data for a financial statement
 def get_fundamentals(ticker, statement_label):
     function = FUNCTIONS[statement_label]
     params = {
@@ -89,17 +118,14 @@ def get_fundamentals(ticker, statement_label):
     response = requests.get(BASE_URL, params=params)
     if response.status_code != 200:
         return pd.DataFrame()
-
     data = response.json()
-    annual_reports = data.get("annualReports", [])
-    if not annual_reports:
+    reports = data.get("annualReports", [])
+    if not reports:
         return pd.DataFrame()
-
-    key_list = KEY_FIELDS[function]
-    filtered = [{k: report.get(k, None) for k in key_list} for report in annual_reports]
+    keys = KEY_FIELDS[function]
+    filtered = [{k: r.get(k, None) for k in keys} for r in reports]
     return pd.DataFrame(filtered)
 
-# Pull overview metrics
 def get_overview(ticker):
     params = {
         "function": "OVERVIEW",
@@ -109,36 +135,37 @@ def get_overview(ticker):
     response = requests.get(BASE_URL, params=params)
     if response.status_code != 200:
         return {}
-
     data = response.json()
-    filtered = {label: data.get(key, None) for key, label in OVERVIEW_FIELDS.items()}
-    return filtered
+    return {label: data.get(key, None) for key, label in OVERVIEW_FIELDS.items()}
 
-# Streamlit UI
+# Streamlit App Layout
 st.set_page_config(layout="wide")
 st.title("📊 Fundamental Metrics Dashboard")
 
 ticker = st.text_input("Enter stock ticker (e.g., IBM, AAPL, MSFT)", value="IBM").upper()
 
 if st.button("Fetch Fundamentals"):
-    # --- Overview Section ---
+    # --- Company Overview ---
     st.subheader("Company Overview")
     overview = get_overview(ticker)
     if overview:
-        overview_df = pd.DataFrame([overview])
-        overview_df = format_large_numbers(overview_df)
-        st.dataframe(overview_df, use_container_width=True)
+        df = pd.DataFrame([overview])
+        df = format_large_numbers(df)
+        for label, value in df.iloc[0].items():
+            col1, col2 = st.columns([0.4, 0.6])
+            col1.markdown(f"**{label}**")
+            col2.markdown(f"{value}")
     else:
         st.warning("No overview data returned.")
 
     # --- Financial Statements ---
-    for statement in FUNCTIONS.keys():
-        st.subheader(statement)
-        df = get_fundamentals(ticker, statement)
+    for section in FUNCTIONS.keys():
+        st.subheader(section)
+        df = get_fundamentals(ticker, section)
         if df.empty:
-            st.warning(f"No data returned for {statement}")
+            st.warning(f"No data returned for {section}")
         else:
+            df = prettify_columns(df)
             df = format_large_numbers(df)
-            df = prettify_columns(df, {k: v for k, v in OVERVIEW_FIELDS.items() if k in df.columns})
             st.dataframe(df, use_container_width=True)
 
