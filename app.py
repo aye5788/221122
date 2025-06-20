@@ -8,14 +8,14 @@ API_KEY = st.secrets["api_keys"]["alpha_vantage"]
 # Base URL
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Function names for Alpha Vantage
+# Alpha Vantage function names
 FUNCTIONS = {
     "Balance Sheet": "BALANCE_SHEET",
     "Cash Flow": "CASH_FLOW",
     "Income Statement": "INCOME_STATEMENT"
 }
 
-# Whitelisted fields per statement
+# Whitelisted fields per financial statement
 KEY_FIELDS = {
     "BALANCE_SHEET": [
         "fiscalDateEnding", "totalAssets", "totalLiabilities", "totalShareholderEquity",
@@ -35,7 +35,7 @@ KEY_FIELDS = {
     ]
 }
 
-# Utility to format large numbers
+# Format large numbers to readable strings (e.g., 12.3B, 455M)
 def format_large_numbers(df):
     def _format(val):
         try:
@@ -52,7 +52,7 @@ def format_large_numbers(df):
             return val
     return df.applymap(_format)
 
-# Function to fetch filtered data
+# Pull and filter data from AV
 def get_fundamentals(ticker, statement_label):
     function = FUNCTIONS[statement_label]
     params = {
@@ -75,6 +75,7 @@ def get_fundamentals(ticker, statement_label):
     return df
 
 # Streamlit UI
+st.set_page_config(layout="wide")
 st.title("📊 Fundamental Metrics Dashboard")
 
 ticker = st.text_input("Enter stock ticker (e.g., IBM, AAPL, MSFT)", value="IBM").upper()
@@ -86,6 +87,5 @@ if st.button("Fetch Fundamentals"):
         if df.empty:
             st.warning(f"No data returned for {statement}")
         else:
-            formatted = format_large_numbers(df)
-            st.dataframe(formatted)
-
+            formatted_df = format_large_numbers(df)
+            st.dataframe(formatted_df, use_container_width=True)
