@@ -31,7 +31,38 @@ KEY_FIELDS = {
     ]
 }
 
-# Format large numbers
+# Custom column name mapping for pretty display
+COLUMN_LABELS = {
+    "fiscalDateEnding": "Fiscal Date",
+    "totalAssets": "Total Assets",
+    "totalLiabilities": "Total Liabilities",
+    "totalShareholderEquity": "Total Shareholder Equity",
+    "currentAssets": "Current Assets",
+    "currentLiabilities": "Current Liabilities",
+    "cashAndCashEquivalentsAtCarryingValue": "Cash Equivalents at Carrying Value",
+    "shortTermDebt": "Short-Term Debt",
+    "longTermDebt": "Long-Term Debt",
+    "retainedEarnings": "Retained Earnings",
+    "operatingCashflow": "Operating Cash Flow",
+    "capitalExpenditures": "Capital Expenditures",
+    "netIncome": "Net Income",
+    "depreciationDepletionAndAmortization": "Amortization",
+    "dividendPayoutCommonStock": "Dividend Payout (Common Stock)",
+    "cashflowFromInvestment": "Cash Flow from Investment",
+    "cashflowFromFinancing": "Cash Flow from Financing",
+    "totalRevenue": "Total Revenue",
+    "grossProfit": "Gross Profit",
+    "operatingIncome": "Operating Income",
+    "ebit": "EBIT",
+    "ebitda": "EBITDA",
+    "costOfRevenue": "Cost of Revenue",
+    "sellingGeneralAndAdministrative": "SG&A",
+    "researchAndDevelopment": "R&D",
+    "incomeTaxExpense": "Income Tax Expense",
+    "interestExpense": "Interest Expense",
+    "interestIncome": "Interest Income"
+}
+
 def format_large_numbers(df):
     def _format(val):
         try:
@@ -48,11 +79,10 @@ def format_large_numbers(df):
             return val
     return df.applymap(_format)
 
-# Clean column names
+# Apply the custom labels
 def prettify_columns(df):
-    return df.rename(columns=lambda col: ' '.join([word.capitalize() for word in col.split('And')[-1].split('_')[0].split()]) if col != "fiscalDateEnding" else "Fiscal Date")
+    return df.rename(columns=COLUMN_LABELS)
 
-# Get fundamentals from AV
 def get_fundamentals(ticker, statement_label):
     function = FUNCTIONS[statement_label]
     params = {
@@ -90,3 +120,4 @@ if st.button("Fetch Fundamentals"):
             df = format_large_numbers(df)
             df = prettify_columns(df)
             st.dataframe(df, use_container_width=True)
+
