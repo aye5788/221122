@@ -1,19 +1,17 @@
 import streamlit as st
 import requests
 import pandas as pd
+import plotly.express as px
 
-# Load API key from Streamlit secrets
 API_KEY = st.secrets["api_keys"]["alpha_vantage"]
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Function names for financials
 FUNCTIONS = {
     "Balance Sheet": "BALANCE_SHEET",
     "Cash Flow": "CASH_FLOW",
     "Income Statement": "INCOME_STATEMENT"
 }
 
-# Field mappings for each financial statement
 KEY_FIELDS = {
     "BALANCE_SHEET": [
         "fiscalDateEnding", "totalAssets", "totalLiabilities", "totalShareholderEquity",
@@ -33,7 +31,6 @@ KEY_FIELDS = {
     ]
 }
 
-# Human-readable column name mapping
 PRETTY_LABELS = {
     "fiscalDateEnding": "Fiscal Date",
     "totalAssets": "Total Assets",
@@ -65,7 +62,6 @@ PRETTY_LABELS = {
     "interestIncome": "Interest Income"
 }
 
-# Overview field mapping (used only for overview display)
 OVERVIEW_FIELDS = {
     "Name": "Company Name",
     "Exchange": "Exchange",
@@ -138,14 +134,26 @@ def get_overview(ticker):
     data = response.json()
     return {label: data.get(key, None) for key, label in OVERVIEW_FIELDS.items()}
 
-# Streamlit App Layout
+def plot_trends(df, x_col, y_cols, title):
+    try:
+        df[x_col] = pd.to_datetime(df[x_col])
+        df = df.sort_values(x_col)
+        plot_df = df[[x_col] + y_cols].copy()
+        for col in y_cols:
+            plot_df[col] = plot_df[col].replace('[\$,B,M,K]', '', regex=True).astype(float)
+        fig = px.line(plot_df, x=x_col, y=y_cols, title=title)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"Could not generate plot for {title}: {e}")
+
+# Streamlit App
 st.set_page_config(layout="wide")
 st.title("📊 Fundamental Metrics Dashboard")
 
 ticker = st.text_input("Enter stock ticker (e.g., IBM, AAPL, MSFT)", value="IBM").upper()
 
 if st.button("Fetch Fundamentals"):
-    # --- Company Overview ---
+    # --- Overview Section ---
     st.subheader("Company Overview")
     overview = get_overview(ticker)
     if overview:
@@ -158,7 +166,7 @@ if st.button("Fetch Fundamentals"):
     else:
         st.warning("No overview data returned.")
 
-    # --- Financial Statements ---
+    # --- Financial Statements + Trends ---
     for section in FUNCTIONS.keys():
         st.subheader(section)
         df = get_fundamentals(ticker, section)
@@ -168,4 +176,12 @@ if st.button("Fetch Fundamentals"):
             df = prettify_columns(df)
             df = format_large_numbers(df)
             st.dataframe(df, use_container_width=True)
+
+            # Plot section-specific trends
+            if section == "Balance Sheet":
+                plot_trends(df, "Fiscal Date", ["Total Assets", "Total Liabilities"], "Total Assets vs Liabilities")
+            elif section == "Cash Flow":
+                plot_trends(df, "Fiscal Date", ["Operating Cash Flow", "Capital Expenditures"], "Cash Flow vs CapEx")
+            elif section == "Income Statement":
+                plot_trends(df, "Fiscal Date", ["Total Revenue", "Net Income"], "Revenue vs Net Income")
 
