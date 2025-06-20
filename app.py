@@ -4,18 +4,14 @@ import pandas as pd
 
 # Load API key from secrets
 API_KEY = st.secrets["api_keys"]["alpha_vantage"]
-
-# Base URL
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Alpha Vantage function names
 FUNCTIONS = {
     "Balance Sheet": "BALANCE_SHEET",
     "Cash Flow": "CASH_FLOW",
     "Income Statement": "INCOME_STATEMENT"
 }
 
-# Whitelisted fields per financial statement
 KEY_FIELDS = {
     "BALANCE_SHEET": [
         "fiscalDateEnding", "totalAssets", "totalLiabilities", "totalShareholderEquity",
@@ -35,7 +31,7 @@ KEY_FIELDS = {
     ]
 }
 
-# Format large numbers to readable strings (e.g., 12.3B, 455M)
+# Format large numbers
 def format_large_numbers(df):
     def _format(val):
         try:
@@ -52,7 +48,11 @@ def format_large_numbers(df):
             return val
     return df.applymap(_format)
 
-# Pull and filter data from AV
+# Clean column names
+def prettify_columns(df):
+    return df.rename(columns=lambda col: ' '.join([word.capitalize() for word in col.split('And')[-1].split('_')[0].split()]) if col != "fiscalDateEnding" else "Fiscal Date")
+
+# Get fundamentals from AV
 def get_fundamentals(ticker, statement_label):
     function = FUNCTIONS[statement_label]
     params = {
@@ -87,5 +87,6 @@ if st.button("Fetch Fundamentals"):
         if df.empty:
             st.warning(f"No data returned for {statement}")
         else:
-            formatted_df = format_large_numbers(df)
-            st.dataframe(formatted_df, use_container_width=True)
+            df = format_large_numbers(df)
+            df = prettify_columns(df)
+            st.dataframe(df, use_container_width=True)
